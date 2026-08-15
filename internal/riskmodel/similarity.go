@@ -16,13 +16,21 @@ type SimilarYear struct {
 // all years so each contributes comparably regardless of its natural scale.
 // Returns an empty slice if target is absent or there are no other years.
 func RankSimilarYears(target int, features []YearFeature) []SimilarYear {
-	if len(features) < 2 {
+	// Drop years with any missing (NaN) feature: they cannot be standardized and
+	// a single one would poison the shared z-score ruler for every other year.
+	usable := make([]YearFeature, 0, len(features))
+	for _, f := range features {
+		if !hasNaN(vector(f)) {
+			usable = append(usable, f)
+		}
+	}
+	if len(usable) < 2 {
 		return []SimilarYear{}
 	}
 
-	vecs := make(map[int][]float64, len(features))
+	vecs := make(map[int][]float64, len(usable))
 	var targetVec []float64
-	for _, f := range features {
+	for _, f := range usable {
 		v := vector(f)
 		vecs[f.Year] = v
 		if f.Year == target {
@@ -33,11 +41,11 @@ func RankSimilarYears(target int, features []YearFeature) []SimilarYear {
 		return []SimilarYear{}
 	}
 
-	means, stds := standardizeParams(features)
+	means, stds := standardizeParams(usable)
 	ts := standardize(targetVec, means, stds)
 
-	out := make([]SimilarYear, 0, len(features)-1)
-	for _, f := range features {
+	out := make([]SimilarYear, 0, len(usable)-1)
+	for _, f := range usable {
 		if f.Year == target {
 			continue
 		}
@@ -51,6 +59,17 @@ func RankSimilarYears(target int, features []YearFeature) []SimilarYear {
 		return out[i].Year < out[j].Year // stable tiebreak on equal distance
 	})
 	return out
+}
+
+// hasNaN reports whether any dimension is NaN, i.e. the year has a missing
+// feature and is not usable for ranking.
+func hasNaN(v []float64) bool {
+	for _, x := range v {
+		if math.IsNaN(x) {
+			return true
+		}
+	}
+	return false
 }
 
 // vector flattens a YearFeature into its ordered numeric dimensions.
