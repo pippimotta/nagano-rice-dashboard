@@ -16,6 +16,16 @@ type DailyWeather struct {
 	Sunshine float64 // sunshine duration, hours
 }
 
+// RiceYield is one crop year's paddy-rice outcome for the station's prefecture,
+// from the MAFF crop statistics. SakukyoIndex (作況指数) is normalized against the
+// expected "normal-year" yield, so it isolates the weather signal; Yield10a is
+// the absolute yield in kg per 10 ares.
+type RiceYield struct {
+	Year         int
+	SakukyoIndex float64 // 作況指数, crop situation index (平年 = 100)
+	Yield10a     float64 // 収穫期 10a当たり収量, kg per 10a
+}
+
 // YearFeature is the growth-stage risk feature vector for one crop year,
 // derived from that year's daily weather.
 type YearFeature struct {
