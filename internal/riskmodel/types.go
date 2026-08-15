@@ -42,3 +42,11 @@ type YearFeature struct {
 	// GrainFillSunshine is the total sunshine hours over the grain-fill window.
 	GrainFillSunshine float64
 }
+
+// YearRecord is the derived per-year row: a year's growth-stage features joined
+// with that year's rice outcome. It is the shape exported for the dashboard.
+type YearRecord struct {
+	YearFeature
+	SakukyoIndex float64 // 作況指数, crop situation index (平年 = 100)
+	Yield10a     float64 // 収穫期 10a当たり収量, kg per 10a
+}
