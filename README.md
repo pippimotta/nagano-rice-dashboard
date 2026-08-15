@@ -32,10 +32,11 @@ The output is presented as a analog lookup (instead of production prediction): i
 ```
 JMA weather CSV ─┐
                  ├─▶ ingest ─▶ BigQuery (raw) ─▶ features ─▶ year_features ─▶ JSON ─▶ dashboard
-MAFF e-Stat API ─┘
+MAFF yield JSON ─┘
 ```
 
-- **Ingest (Go):** load daily weather and annual rice statistics into BigQuery.
+- **Ingest (Go):** parse the committed raw files (JMA CSV, MAFF JSON) and load
+  daily weather and annual rice statistics into BigQuery.
 - **Features (Go):** for each year, compute growth-stage risk features and rank
   past years by climate similarity (z-score standardized Euclidean distance).
 - **Storage (BigQuery):** two raw tables (`weather_daily`, `rice_yield_annual`)
@@ -66,10 +67,14 @@ current growth stage — which is what this project builds on.
 | Source | What it provides | Access |
 |--------|------------------|--------|
 | **JMA** (気象庁) | Daily temperature, precipitation, sunshine per station (Nagano) | CSV download |
-| **MAFF** (農林水産省) | Rice crop-situation index, yield, harvest, area by prefecture | e-Stat API |
+| **MAFF** (農林水産省) | Rice crop-situation index, yield, harvest, area by prefecture | e-Stat API (fetched once, committed) |
 | **WAGRI** (農業データ連携基盤) | Pest/disease risk and growth-stage forecasts | API (planned, v1) |
 
-v0 uses a single JMA station (Nagano) and roughly the last 30 years.
+v0 uses a single JMA station (Nagano): weather from 1996 and rice statistics
+through 2020 (25 overlapping years). Both raw datasets are committed as versioned
+fixtures — JMA has no public API, and the MAFF long-term table is a static
+historical series fetched once from the e-Stat API — so the pipeline is fully
+reproducible with no runtime API call or secret.
 
 ## Tech Stack
 
