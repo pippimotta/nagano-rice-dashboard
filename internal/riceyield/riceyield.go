@@ -25,25 +25,32 @@ const (
 // "平.28(2016)" -> 2016.
 var yearInName = regexp.MustCompile(`\((\d{4})\)`)
 
+// classItem is one code/label pair in a CLASS dimension (e.g. a year in cat01).
+type classItem struct {
+	Code string `json:"@code"`
+	Name string `json:"@name"`
+}
+
+// statValue is one data cell: a value tagged with its year (cat01) and metric
+// (cat02) codes.
+type statValue struct {
+	Cat01 string `json:"@cat01"`
+	Cat02 string `json:"@cat02"`
+	Val   string `json:"$"`
+}
+
 // statsData mirrors the subset of the getStatsData JSON that this parser reads.
 type statsData struct {
 	GetStatsData struct {
 		StatisticalData struct {
 			ClassInf struct {
 				ClassObj []struct {
-					ID    string `json:"@id"`
-					Class []struct {
-						Code string `json:"@code"`
-						Name string `json:"@name"`
-					} `json:"CLASS"`
+					ID    string      `json:"@id"`
+					Class []classItem `json:"CLASS"`
 				} `json:"CLASS_OBJ"`
 			} `json:"CLASS_INF"`
 			DataInf struct {
-				Value []struct {
-					Cat01 string `json:"@cat01"`
-					Cat02 string `json:"@cat02"`
-					Val   string `json:"$"`
-				} `json:"VALUE"`
+				Value []statValue `json:"VALUE"`
 			} `json:"DATA_INF"`
 		} `json:"STATISTICAL_DATA"`
 	} `json:"GET_STATS_DATA"`
