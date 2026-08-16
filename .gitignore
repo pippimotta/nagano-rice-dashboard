@@ -15,9 +15,6 @@
 # Claude Code tooling (preview config, local settings)
 .claude/
 
-# Generated pipeline output (rebuild with `go run ./cmd/features`)
-web/data/year_features.json
-
 #doc
 context.md
 SPEC.md
