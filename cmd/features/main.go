@@ -1,7 +1,8 @@
 // Command features builds the derived year_features dataset: it reads the raw
 // JMA weather and MAFF yield fixtures, computes each year's growth-stage risk
-// features, joins them with the rice outcome, and writes a static JSON file for
-// the dashboard. Run from the repository root.
+// features, joins them with the rice outcome, precomputes each year's
+// similar-year ranking, and writes a static JSON file for the dashboard. Run
+// from the repository root.
 package main
 
 import (
@@ -25,13 +26,22 @@ const (
 // yearJSON is the export shape for one year. Floats that may be missing use a
 // pointer so a NaN feature is written as JSON null rather than failing to encode.
 type yearJSON struct {
-	Year              int      `json:"year"`
-	HeatDaysHeading   int      `json:"heatDaysHeading"`
-	GrainFillMeanTemp *float64 `json:"grainFillMeanTemp"`
-	ColdMeanTemp      *float64 `json:"coldMeanTemp"`
-	GrainFillSunshine *float64 `json:"grainFillSunshine"`
-	SakukyoIndex      *float64 `json:"sakukyoIndex"`
-	Yield10a          *float64 `json:"yield10a"`
+	Year              int           `json:"year"`
+	HeatDaysHeading   int           `json:"heatDaysHeading"`
+	GrainFillMeanTemp *float64      `json:"grainFillMeanTemp"`
+	ColdMeanTemp      *float64      `json:"coldMeanTemp"`
+	GrainFillSunshine *float64      `json:"grainFillSunshine"`
+	SakukyoIndex      *float64      `json:"sakukyoIndex"`
+	Yield10a          *float64      `json:"yield10a"`
+	Similar           []similarJSON `json:"similar"` // precomputed ranking, closest first
+}
+
+// similarJSON is one entry of a year's precomputed similarity ranking: another
+// year and its standardized distance. Ranking is computed in Go so riskmodel
+// stays the single source of truth; the dashboard only reads and renders it.
+type similarJSON struct {
+	Year     int     `json:"year"`
+	Distance float64 `json:"distance"`
 }
 
 func main() {
@@ -46,8 +56,21 @@ func main() {
 
 	records := riskmodel.Join(riskmodel.ComputeYearFeatures(weather), yields)
 
+	// Rank only among the joined years: a similar year must have both a climate
+	// vector and a known yield, so weather-only years (no rice statistics yet)
+	// are excluded from every ranking.
+	rankFeatures := make([]riskmodel.YearFeature, 0, len(records))
+	for _, r := range records {
+		rankFeatures = append(rankFeatures, r.YearFeature)
+	}
+
 	out := make([]yearJSON, 0, len(records))
 	for _, r := range records {
+		ranked := riskmodel.RankSimilarYears(r.Year, rankFeatures)
+		similar := make([]similarJSON, 0, len(ranked))
+		for _, s := range ranked {
+			similar = append(similar, similarJSON{Year: s.Year, Distance: s.Distance})
+		}
 		out = append(out, yearJSON{
 			Year:              r.Year,
 			HeatDaysHeading:   r.HeatDaysHeading,
@@ -56,6 +79,7 @@ func main() {
 			GrainFillSunshine: nullable(r.GrainFillSunshine),
 			SakukyoIndex:      nullable(r.SakukyoIndex),
 			Yield10a:          nullable(r.Yield10a),
+			Similar:           similar,
 		})
 	}
 
