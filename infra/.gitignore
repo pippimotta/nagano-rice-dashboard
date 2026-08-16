@@ -1,6 +1,0 @@
-# Terraform local state and working dir (never commit state — it can hold secrets)
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-crash.*.log

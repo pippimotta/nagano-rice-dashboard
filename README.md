@@ -43,9 +43,8 @@ MAFF yield JSON ─┘
   Rankings are precomputed, so there is no query at runtime — pick a target year
   and read across to the most climate-similar past years and their crop-situation
   index and yield.
-- **Storage:** the exported JSON is the pipeline's product. A private,
-  Terraform-managed GCS bucket holds it as the derived-artifact store, out of the
-  request path — the browser only talks to the static host.
+- **Storage:** the exported JSON is the pipeline's only product — a single static
+  file the dashboard fetches at load. No database, no backend, no runtime queries.
 
 ## Rice Cultivation Risks (background)
 
@@ -82,9 +81,8 @@ reproducible with no runtime API call or secret.
 ## Tech Stack
 
 - **Pipeline:** Go
-- **Infrastructure:** GCP Cloud Storage (private artifact store), provisioned with
-  Terraform
-- **Frontend:** static HTML with inline-SVG charts, deployed on Vercel
+- **Frontend:** static HTML with inline-SVG charts
+- **Hosting:** Vercel (static, zero backend)
 - **CI:** GitHub Actions (lint, build, test)
 
 ## Roadmap
@@ -93,7 +91,7 @@ reproducible with no runtime API call or secret.
 - Parse JMA (Nagano) weather and MAFF rice statistics
 - Growth-stage risk features + similar-year ranking
 - Static one-page dashboard on Vercel
-- Terraform for GCP artifact storage, CI
+- CI (lint, build, test)
 
 **Later (v1+)**
 - WAGRI integration (pest/disease risk, growth-stage forecasts)
@@ -106,6 +104,9 @@ reproducible with no runtime API call or secret.
   KB), far below the scale where a warehouse like BigQuery earns its place, and
   the transform already lives in tested Go — a warehouse would only duplicate
   that logic in SQL for no functional gain.
+- No bespoke cloud hosting. The output is one static file, so a static host
+  (Vercel) covers it end to end; a load balancer, CDN, or storage bucket would be
+  cost and moving parts with nothing to justify them at this size.
 
 ## Data & Licensing
 
