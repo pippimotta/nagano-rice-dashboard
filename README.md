@@ -31,18 +31,21 @@ The output is presented as a analog lookup (instead of production prediction): i
 
 ```
 JMA weather CSV ─┐
-                 ├─▶ ingest ─▶ BigQuery (raw) ─▶ features ─▶ year_features ─▶ JSON ─▶ dashboard
+                 ├─▶ features (Go) ─▶ year_features.json ─▶ dashboard (Vercel)
 MAFF yield JSON ─┘
 ```
 
-- **Ingest (Go):** parse the committed raw files (JMA CSV, MAFF JSON) and load
-  daily weather and annual rice statistics into BigQuery.
-- **Features (Go):** for each year, compute growth-stage risk features and rank
-  past years by climate similarity (z-score standardized Euclidean distance).
-- **Storage (BigQuery):** two raw tables (`weather_daily`, `rice_yield_annual`)
-  and one derived table (`year_features`), exported to a static JSON.
-- **Dashboard:** a static one-page view. Pick a target year; see the most
-  climate-similar past years and their crop-situation index and yield.
+- **Features (Go):** parse the committed raw files (JMA CSV, MAFF JSON), compute
+  each year's growth-stage risk features, rank past years by climate similarity
+  (z-score standardized Euclidean distance), and export a single static JSON with
+  every year's ranking precomputed.
+- **Serving:** a static one-page dashboard, deployed on Vercel, reads that JSON.
+  Rankings are precomputed, so there is no query at runtime — pick a target year
+  and read across to the most climate-similar past years and their crop-situation
+  index and yield.
+- **Storage:** the exported JSON is the pipeline's product. A private,
+  Terraform-managed GCS bucket holds it as the derived-artifact store, out of the
+  request path — the browser only talks to the static host.
 
 ## Rice Cultivation Risks (background)
 
@@ -79,24 +82,30 @@ reproducible with no runtime API call or secret.
 ## Tech Stack
 
 - **Pipeline:** Go
-- **Infrastructure:** GCP — BigQuery, Cloud Run, Cloud Storage — provisioned with
+- **Infrastructure:** GCP Cloud Storage (private artifact store), provisioned with
   Terraform
-- **Frontend:** static HTML + a lightweight charting library
+- **Frontend:** static HTML with inline-SVG charts, deployed on Vercel
 - **CI:** GitHub Actions (lint, build, test)
 
 ## Roadmap
 
 **v0**
-- Ingest JMA (Nagano) weather and MAFF rice statistics
+- Parse JMA (Nagano) weather and MAFF rice statistics
 - Growth-stage risk features + similar-year ranking
-- Static one-page dashboard
-- Terraform for GCP resources, CI
+- Static one-page dashboard on Vercel
+- Terraform for GCP artifact storage, CI
 
 **Later (v1+)**
 - WAGRI integration (pest/disease risk, growth-stage forecasts)
 - Multiple stations / elevation contrast (e.g. Iida vs. Karuizawa)
 - Dynamic growth-stage windows based on accumulated temperature
 - Deeper history and a live current-year feed
+
+**Deliberate non-goals**
+- No data warehouse. The dataset is yearly-aggregated for a single region (a few
+  KB), far below the scale where a warehouse like BigQuery earns its place, and
+  the transform already lives in tested Go — a warehouse would only duplicate
+  that logic in SQL for no functional gain.
 
 ## Data & Licensing
 
