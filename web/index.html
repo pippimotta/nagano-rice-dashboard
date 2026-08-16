@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nagano Rice Growth Risk Dashboard</title>
+  <style>
+    :root {
+      --bg: #fafaf7;
+      --panel: #ffffff;
+      --border: #e2e2dc;
+      --text: #23231f;
+      --muted: #6b6b63;
+      --accent: #b5651d;   /* target */
+      --similar: #d99a3f;  /* top similar */
+      --dot: #9a9a90;      /* other years */
+      --grid: #ededea;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .controls { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    select { font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 20px; }
+    .panel h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 12px; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+    .feature .label { font-size: 12px; color: var(--muted); }
+    .feature .value { font-size: 20px; font-variant-numeric: tabular-nums; }
+    .feature .unit { font-size: 12px; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { font-size: 12px; color: var(--muted); font-weight: 600; }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr:hover { background: #f5f5f0; }
+    .rank { color: var(--muted); }
+    .note { color: var(--muted); font-size: 13px; }
+    .chart-wrap { overflow-x: auto; }
+    svg { display: block; max-width: 100%; height: auto; }
+    .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Nagano Rice Growth Risk Dashboard</h1>
+    <p class="sub">
+      Pick a target year. Past years are ranked by how similar their growth-stage
+      climate was, using a standardized (z-score) distance over four risk features.
+      Sources: JMA weather, MAFF rice statistics (1996&ndash;2020).
+    </p>
+
+    <div class="controls">
+      <label for="year-select">Target year</label>
+      <select id="year-select"></select>
+    </div>
+
+    <section class="panel">
+      <h2 id="target-title">Target year</h2>
+      <div class="features" id="target-features"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Grain-fill mean temperature vs. yield</h2>
+      <div class="chart-wrap"><div id="chart"></div></div>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent)"></span>Target year</span>
+        <span><span class="swatch" style="background:var(--similar)"></span>Top 3 similar</span>
+        <span><span class="swatch" style="background:var(--dot)"></span>Other years</span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Most similar years</h2>
+      <div id="ranking"></div>
+    </section>
+  </main>
+
+  <script>
+    // The similarity ranking is precomputed in Go (riskmodel is the single source
+    // of truth) and read from each record's `similar` array. FEATURE_KEYS here
+    // only drives the feature display order and the missing-value check that
+    // decides whether a year was excluded from ranking.
+    const FEATURE_KEYS = ["heatDaysHeading", "grainFillMeanTemp", "coldMeanTemp", "grainFillSunshine"];
+
+    const FEATURE_META = {
+      heatDaysHeading:   { label: "Heading heat days", unit: "days ≥35°C", dec: 0 },
+      grainFillMeanTemp: { label: "Grain-fill mean temp", unit: "°C", dec: 1 },
+      coldMeanTemp:      { label: "Cold-window mean temp", unit: "°C", dec: 1 },
+      grainFillSunshine: { label: "Grain-fill sunshine", unit: "hours", dec: 1 },
+    };
+
+    const vec = (r) => FEATURE_KEYS.map((k) => r[k]);
+    const hasNull = (v) => v.some((x) => x === null || Number.isNaN(x));
+    const fmt = (x, dec) => (x === null || x === undefined || Number.isNaN(x)) ? "—" : Number(x).toFixed(dec);
+
+    function renderTarget(rec) {
+      document.getElementById("target-title").textContent = "Target year · " + rec.year;
+      const cells = FEATURE_KEYS.map((k) => {
+        const m = FEATURE_META[k];
+        return `<div class="feature"><div class="label">${m.label}</div>` +
+               `<div class="value">${fmt(rec[k], m.dec)}</div>` +
+               `<div class="unit">${m.unit}</div></div>`;
+      });
+      cells.push(
+        `<div class="feature"><div class="label">作況指数 (index)</div>` +
+        `<div class="value">${fmt(rec.sakukyoIndex, 0)}</div><div class="unit">平年=100</div></div>`,
+        `<div class="feature"><div class="label">Yield</div>` +
+        `<div class="value">${fmt(rec.yield10a, 0)}</div><div class="unit">kg / 10a</div></div>`
+      );
+      document.getElementById("target-features").innerHTML = cells.join("");
+    }
+
+    function renderRanking(targetYear, ranked, byYear) {
+      const box = document.getElementById("ranking");
+      if (ranked.length === 0) {
+        const rec = byYear.get(targetYear);
+        box.innerHTML = hasNull(vec(rec))
+          ? `<p class="note">${targetYear} has an incomplete feature (missing measurement), so it is excluded from similarity ranking — matching the Go pipeline.</p>`
+          : `<p class="note">No comparable years available.</p>`;
+        return;
+      }
+      const rows = ranked.map((s, i) => {
+        const r = byYear.get(s.year);
+        return `<tr>` +
+          `<td class="rank">${i + 1}</td>` +
+          `<td>${s.year}</td>` +
+          `<td>${s.distance.toFixed(3)}</td>` +
+          `<td>${fmt(r.heatDaysHeading, 0)}</td>` +
+          `<td>${fmt(r.grainFillMeanTemp, 1)}</td>` +
+          `<td>${fmt(r.coldMeanTemp, 1)}</td>` +
+          `<td>${fmt(r.grainFillSunshine, 1)}</td>` +
+          `<td>${fmt(r.sakukyoIndex, 0)}</td>` +
+          `<td>${fmt(r.yield10a, 0)}</td>` +
+          `</tr>`;
+      });
+      box.innerHTML =
+        `<table><thead><tr>` +
+        `<th>#</th><th>Year</th><th>Distance</th>` +
+        `<th>Heat days</th><th>Grain-fill °C</th><th>Cold °C</th><th>Sunshine h</th>` +
+        `<th>作況</th><th>kg/10a</th>` +
+        `</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+    }
+
+    // Inline-SVG scatter: grain-fill mean temp (x) against yield (y) across all
+    // years. The target and the top-3 similar years are highlighted.
+    function renderChart(targetYear, ranked, records) {
+      const W = 640, H = 400, ml = 56, mr = 20, mt = 16, mb = 44;
+      const pw = W - ml - mr, ph = H - mt - mb;
+      const pts = records
+        .filter((r) => r.grainFillMeanTemp != null && r.yield10a != null)
+        .map((r) => ({ year: r.year, x: r.grainFillMeanTemp, y: r.yield10a }));
+
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      const pad = (min, max) => { const d = (max - min) * 0.08 || 1; return [min - d, max + d]; };
+      const [x0, x1] = pad(Math.min(...xs), Math.max(...xs));
+      const [y0, y1] = pad(Math.min(...ys), Math.max(...ys));
+      const sx = (x) => ml + ((x - x0) / (x1 - x0)) * pw;
+      const sy = (y) => mt + ph - ((y - y0) / (y1 - y0)) * ph;
+
+      const top3 = new Set(ranked.slice(0, 3).map((s) => s.year));
+      const ticks = (a, b, n) => Array.from({ length: n }, (_, i) => a + ((b - a) * i) / (n - 1));
+
+      let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grain-fill mean temperature versus yield scatter plot">`;
+      // grid + axis ticks
+      for (const t of ticks(y0, y1, 5)) {
+        const y = sy(t);
+        svg += `<line x1="${ml}" y1="${y}" x2="${ml + pw}" y2="${y}" stroke="var(--grid)"/>`;
+        svg += `<text x="${ml - 8}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${t.toFixed(0)}</text>`;
+      }
+      for (const t of ticks(x0, x1, 5)) {
+        const x = sx(t);
+        svg += `<text x="${x}" y="${mt + ph + 18}" text-anchor="middle" font-size="11" fill="var(--muted)">${t.toFixed(1)}</text>`;
+      }
+      // axis labels
+      svg += `<text x="${ml + pw / 2}" y="${H - 6}" text-anchor="middle" font-size="12" fill="var(--muted)">Grain-fill mean temp (°C)</text>`;
+      svg += `<text x="16" y="${mt + ph / 2}" text-anchor="middle" font-size="12" fill="var(--muted)" transform="rotate(-90 16 ${mt + ph / 2})">Yield (kg / 10a)</text>`;
+      // points: others, then similar, then target (paint order = layering)
+      for (const p of pts) {
+        if (p.year === targetYear || top3.has(p.year)) continue;
+        svg += `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="4" fill="var(--dot)" opacity="0.7"><title>${p.year}</title></circle>`;
+      }
+      for (const p of pts) {
+        if (!top3.has(p.year) || p.year === targetYear) continue;
+        svg += `<circle cx="${sx(p.x)}" cy="${sy(p.y)}" r="5.5" fill="var(--similar)"><title>${p.year}</title></circle>`;
+        svg += `<text x="${sx(p.x) + 8}" y="${sy(p.y) + 4}" font-size="11" fill="var(--similar)">${p.year}</text>`;
+      }
+      const tp = pts.find((p) => p.year === targetYear);
+      if (tp) {
+        svg += `<circle cx="${sx(tp.x)}" cy="${sy(tp.y)}" r="6.5" fill="var(--accent)"><title>${tp.year}</title></circle>`;
+        svg += `<text x="${sx(tp.x) + 9}" y="${sy(tp.y) + 4}" font-size="11" font-weight="600" fill="var(--accent)">${tp.year}</text>`;
+      }
+      svg += `</svg>`;
+      document.getElementById("chart").innerHTML = svg;
+    }
+
+    function update(targetYear, records, byYear) {
+      const rec = byYear.get(targetYear);
+      const ranked = rec.similar; // precomputed in Go
+      renderTarget(rec);
+      renderChart(targetYear, ranked, records);
+      renderRanking(targetYear, ranked, byYear);
+    }
+
+    async function main() {
+      // no-cache: always revalidate so a regenerated export is never served stale
+      // from the browser's heuristic cache (the file carries no cache headers).
+      const res = await fetch("./data/year_features.json", { cache: "no-cache" });
+      if (!res.ok) throw new Error("failed to load year_features.json: " + res.status);
+      const records = await res.json();
+      records.sort((a, b) => a.year - b.year);
+      const byYear = new Map(records.map((r) => [r.year, r]));
+
+      const select = document.getElementById("year-select");
+      for (const r of records) {
+        const opt = document.createElement("option");
+        opt.value = r.year;
+        opt.textContent = r.year;
+        select.appendChild(opt);
+      }
+      const initial = records[records.length - 1].year; // latest year
+      select.value = initial;
+      select.addEventListener("change", () => update(Number(select.value), records, byYear));
+      update(initial, records, byYear);
+    }
+
+    main().catch((err) => {
+      document.querySelector("main").insertAdjacentHTML(
+        "beforeend",
+        `<p class="note">Could not load data: ${err.message}. Generate it with <code>go run ./cmd/features</code> and serve the <code>web/</code> directory.</p>`
+      );
+    });
+  </script>
+</body>
+</html>
